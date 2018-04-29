@@ -1,0 +1,279 @@
+#!/bin/sh
+
+export POSIXLY_CORRECT=yes
+
+init() {
+	if [ -z $WEDI_RC ]; then
+		echo "WEDI_RC is not set" >&2
+		exit 1
+	fi
+
+	WEDI_FILE_NAME=${WEDI_RC##*/}
+	WEDI_PATH=$(dirname "${WEDI_RC}")
+
+	if [ -d "$WEDI_PATH" ] ; then
+		if [ -f "$WEDI_RC" ] ; then
+			:
+		else
+			touch $WEDI_RC
+		fi	
+	else
+		mkdir -p $WEDI_PATH
+		touch $WEDI_RC
+	fi
+}
+
+editFile() {
+	if [ ! -z $EDITOR ]; then
+		$EDITOR $1
+		returnCode=$?
+	elif [ ! -z $VISUAL ]; then
+		$VISUAL $1
+		returnCode=$?
+	else
+		vi $1
+		returnCode=$?
+	fi
+	return $returnCode
+}
+
+init
+
+if [ -f "$1" ]; then
+	if [ "$#" -eq 1 ]; then
+		realpth=$( readlink -f $1 )
+	else
+		echo "error: bad arguments" >&2
+		exit 1
+	fi
+	parametr=$1
+	file=`readlink -f $parametr`
+	entry=$( echo -n $file" " && date +%s && date +%Y%m%d )
+	echo $entry >> $WEDI_RC
+	editFile $parametr
+	returnCode=$?
+	exit $returnCode
+fi
+
+if [ ! -s $WEDI_RC ]; then
+    echo "error: no file has ever been edited by wedi script" >&2
+	exit 1
+fi
+
+if [ "$#" -eq 0 ] || [ -d "$1" ] ; then
+	if [ "$#" -eq 0 ]; then
+		realpth=$( readlink -f . )
+	elif [ $# -eq 1 ]; then
+		realpth=$( readlink -f $1 )
+	else
+		echo "error: bad arguments" >&2
+		exit 1
+	fi
+	minDate=0
+	flag=false
+	found=""
+	result=$( find $realpth -maxdepth 1 -type f )
+	for fileInActualFolder in $result 
+	do
+		while read -r line
+		do
+			nameFromwedirc=$(echo $line | cut -d' ' -f1)
+			if [ "$fileInActualFolder" = "$nameFromwedirc" ]; then
+				datumZwedirc=$(echo $line | cut -d' ' -f2)
+				flag=true
+				
+				if [ "$minDate" -lt "$datumZwedirc" ]; then
+					minDate=$datumZwedirc
+					found=$nameFromwedirc
+				fi
+			fi
+		done < $WEDI_RC
+	done
+	if [ $flag = true ];then
+		file=`readlink -f $found`
+		intofile=$( echo -n $file" " && date +%s && date +%Y%m%d )
+		echo $intofile >> $WEDI_RC
+		editFile $found
+		returnCode=$?
+		exit $returnCode
+	else
+		echo "error: no file has ever been edited in this directory" >&2
+		exit 1
+	fi	
+fi
+
+if [ "$1" = "-m" ]; then
+	if [ $# -eq 1 ]; then
+		realpth=$( readlink -f . )
+	elif [ $# -eq 2 ]; then
+		if [ -d "$2" ]; then
+			realpth=$( readlink -f $2 )
+		else
+			echo "error: bad arguments" >&2
+			exit 1
+		fi
+	else
+		echo "error: bad arguments" >&2
+		exit 1
+	fi
+	flag=false
+	found=""
+	min=0
+	result=$( find $realpth -maxdepth 1 -type f )
+	for fileInActualFolder in $result 
+	do
+		while read -r line
+		do
+			nameFromwedirc=$(echo $line | cut -d' ' -f1)
+			if [ "$fileInActualFolder" = "$nameFromwedirc" ]; then
+				help=`grep -c $nameFromwedirc $WEDI_RC`
+				flag=true
+				
+				if [ $min -lt $help ]; then
+					min=$help
+					found=$nameFromwedirc
+				fi
+			fi
+		done < $WEDI_RC
+	done
+	if [ $flag = true ];then
+		file=`readlink -f $found`
+		intofile=$( echo -n $file" " && date +%s && date +%Y%m%d )
+		echo $intofile >> $WEDI_RC
+		editFile $found
+		returnCode=$?
+		exit $returnCode
+	else
+		echo "error: no file has ever been edited in this directory" >&2
+		exit 1
+	fi
+fi
+
+if [ "$1" = "-l" ]; then
+	if [ $# -eq 1 ]; then
+		realpth=$( readlink -f . )
+	elif [ $# -eq 2 ]; then
+		if [ -d "$2" ]; then
+			realpth=$( readlink -f $2 )
+		else
+			echo "error: bad arguments" >&2
+			exit 1
+		fi
+	else
+		echo "error: bad arguments" >&2
+		exit 1
+	fi
+	flag=false
+	result=$( find $realpth -maxdepth 1 -type f )
+	file_name=""
+	for fileInActualFolder in $result 
+	do
+		while read -r line
+		do
+		    nameFromwedirc=$(echo $line | cut -d' ' -f1)
+
+		    if [ "$fileInActualFolder" = "$nameFromwedirc" ]; then
+				file_name=$file_name$( basename $nameFromwedirc" ")
+				flag=true
+			fi
+		done < $WEDI_RC
+	done
+	if [ $flag = true ];then
+		echo $file_name  | tr ' ' '\n' | sort -u
+		returnCode=$?
+		exit $returnCode
+	else
+		echo "error: no file has ever been edited in this directory" >&2
+		exit 1
+	fi
+fi
+
+if [ "$1" = "-b" ] || [ "$1" = "-a" ] ; then
+	if [ "$#" -eq 2 ]; then
+		realpth=$( readlink -f . )
+	elif [ $# -eq 3 ]; then
+		if [ -d "$3" ]; then
+			realpth=$( readlink -f $3 )
+		else
+			echo "error: bad arguments" >&2
+			exit 1
+		fi
+	else
+		echo "error: bad arguments" >&2
+		exit 1
+	fi
+
+	dateFromUser=""
+	date=$2
+	first=$(echo $date | cut -d'-' -f1)
+	second=$(echo $date | cut -d'-' -f2)
+	third=$(echo $date | cut -d'-' -f3)
+	dateFromUser="$first$second$third"
+	flag=false
+	print_for_me=""
+	result=$( find $realpth -maxdepth 1 -type f )
+	for fileInActualFolder in $result 
+	do
+		while read -r line
+		do
+		    nameFromwedirc=$(echo $line | cut -d' ' -f1)
+			#echo $nameFromwedirc
+			if [ "$fileInActualFolder" = "$nameFromwedirc" ]; then
+				datumZwedirc=$(echo $line | cut -d' ' -f3)
+				
+				case $1 in
+					"-a")
+						if [ $datumZwedirc -gt $dateFromUser ]; then
+							print_for_me=$print_for_me$( basename $nameFromwedirc" " )
+							flag=true
+						fi
+						;;
+					"-b")
+						if [ $datumZwedirc -lt $dateFromUser ]; then
+							print_for_me=$print_for_me$( basename $nameFromwedirc" " )
+							flag=true
+						fi
+						;;
+				esac
+			fi
+		done < $WEDI_RC
+	done
+	if [ $flag = true ];then
+		echo $print_for_me  | tr ' ' '\n' | sort -u
+		returnCode=$?
+		exit $returnCode
+	else
+		echo "error: no file matches this date " >&2
+		exit 1
+	fi	
+fi
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
